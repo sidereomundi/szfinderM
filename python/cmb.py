@@ -129,10 +129,11 @@ def load_cmb_power_spectrum(path: Path) -> CMBPowerSpectrum:
 
     ell = data[:, 0]
     # Convert the CAMB output to the RMS temperature per mode, mirroring ``clinput``.
-    cl = data[:, 1]
+    cl = data[:, 1] 
     cl = cl * (2.0 * math.pi / (ell * (ell + 1.0)))
     cl = np.sqrt(np.clip(cl * 1.0e-12, a_min=0.0, a_max=None))
-
+    cl = cl*1.e6
+    
     yp1 = (cl[1] - cl[0]) / (ell[1] - ell[0])
     ypn = (cl[-1] - cl[-2]) / (ell[-1] - ell[-2])
     second_derivatives = _compute_spline_second_derivatives(ell, cl, yp1, ypn)
@@ -163,7 +164,7 @@ def generate_cmb_map(
         else:
             v_values = range(0, half + 1)
         for v in v_values:
-            ell_value = math.hypot(u, v) / total_scale * 2.0 * math.pi
+            ell_value = math.hypot(u, v) / total_scale * 2.0 * math.pi 
             d_t = spectrum.interpolate(ell_value)
             scale = d_t / math.sqrt(2.0) / imsize / pixsize_rad
             amplitude_r = scale * rng.gasdev()
