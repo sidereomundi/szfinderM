@@ -41,7 +41,7 @@ def parse_parameter_file(path: Path) -> dict[str, Any]:
         msg = f"Unable to open parameter file: {path}"
         raise FileNotFoundError(msg) from exc
 
-    pattern = re.compile(r"^#define\s+([A-Za-z0-9_]+)\s+([^/]+?)\s*$")
+    pattern = re.compile(r"^#define\s+([A-Za-z0-9_]+)\s+(.+?)\s*$")
     values: dict[str, Any] = {}
     for raw_line in content.splitlines():
         line = raw_line.split("//", 1)[0].strip()
