@@ -72,14 +72,37 @@ def build_gaussian_beam(
 
 def parse_args(argv: Iterable[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate a Gaussian beam map.")
-    parser.add_argument("fwhm", type=float, help="Full width at half maximum in arcminutes")
-    parser.add_argument("output", help="Base name for the generated files")
+    parser.add_argument("fwhm", type=float, nargs="?", help="Full width at half maximum in arcminutes")
+    parser.add_argument("output", nargs="?", help="Base name for the generated files")
     parser.add_argument(
         "normalization",
         type=float,
         nargs="?",
         default=1.0,
         help="Optional normalization factor applied to the Gaussian profile",
+    )
+    parser.add_argument(
+        "--fwhm-list",
+        dest="fwhm_list",
+        type=float,
+        nargs="+",
+        help="Generate multiple beams by providing a list of FWHM values (arcminutes)",
+    )
+    parser.add_argument(
+        "--output-names",
+        dest="output_list",
+        nargs="+",
+        help="Output base names corresponding to the provided FWHM values",
+    )
+    parser.add_argument(
+        "--normalizations",
+        dest="normalization_list",
+        type=float,
+        nargs="+",
+        help=(
+            "Optional normalization factors for each FWHM value. "
+            "Omit to use a default normalization of 1.0."
+        ),
     )
     parser.add_argument(
         "--param-file",
@@ -109,11 +132,34 @@ def main(argv: Iterable[str] | None = None) -> int:
         fieldsize=args.fieldsize,
         extendeddim=args.extendeddim,
     )
-    sim_map = build_gaussian_beam(args.fwhm, args.normalization, geometry=geometry)
 
-    fits_name = Path(f"{args.output}.fits")
-    save_imagef(fits_name, sim_map.image)
-    save_fft(sim_map.image, args.output)
+    def _write_outputs(base: str | Path, fwhm_value: float, normalization_value: float) -> None:
+        sim_map = build_gaussian_beam(fwhm_value, normalization_value, geometry=geometry)
+        base_path = Path(base)
+        if base_path.suffix.lower() == ".fits":
+            fits_name = base_path
+            fft_base = base_path.with_suffix("")
+        else:
+            fits_name = base_path.with_suffix(".fits")
+            fft_base = base_path
+        save_imagef(fits_name, sim_map.image)
+        save_fft(sim_map.image, str(fft_base))
+
+    if args.fwhm_list is not None:
+        outputs = args.output_list
+        if outputs is None:
+            raise ValueError("--output-names must be supplied when using --fwhm-list")
+        if len(outputs) != len(args.fwhm_list):
+            raise ValueError("The number of output names must match the number of FWHM values.")
+        normalizations = args.normalization_list or [1.0] * len(args.fwhm_list)
+        if len(normalizations) != len(args.fwhm_list):
+            raise ValueError("The number of normalizations must match the number of FWHM values.")
+        for fwhm_value, output_name, norm_value in zip(args.fwhm_list, outputs, normalizations):
+            _write_outputs(output_name, fwhm_value, norm_value)
+    else:
+        if args.fwhm is None or args.output is None:
+            raise ValueError("Both FWHM and output name must be provided for single-beam generation.")
+        _write_outputs(args.output, args.fwhm, float(args.normalization))
     return 0
 
 

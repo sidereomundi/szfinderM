@@ -101,21 +101,24 @@ def _run_stage(
             raise SystemExit(f"Stage '{description}' failed with status {status}")
 
 
-def _mkbeam_args(param_file: Path) -> List[List[str]]:
-    return [
-        [
-            f"{band.fwhm_arcmin}",
-            band.beam_output,
-            f"{band.normalization}",
-            "--param-file",
-            str(param_file),
-        ]
-        for band in BANDS
-    ]
+def _mkbeam_args(param_file: Path) -> List[str]:
+    args: List[str] = ["--fwhm-list", *[f"{band.fwhm_arcmin}" for band in BANDS]]
+    args.extend(["--output-names", *[band.beam_output for band in BANDS]])
+    args.extend(["--normalizations", *[f"{band.normalization}" for band in BANDS]])
+    args.extend(["--param-file", str(param_file)])
+    return args
 
 
-def _mkszmap_args(param_file: Path, rseed: int, y_map: Path, output_150: Path, output_95: Path) -> List[str]:
-    return [
+def _mkszmap_args(
+    param_file: Path,
+    rseed: int,
+    y_map: Path,
+    output_150: Path,
+    output_95: Path,
+    *,
+    cl_file: Path | None,
+) -> List[str]:
+    args = [
         str(rseed),
         str(y_map),
         "--param-file",
@@ -125,6 +128,9 @@ def _mkszmap_args(param_file: Path, rseed: int, y_map: Path, output_150: Path, o
         "--output-95",
         str(output_95),
     ]
+    if cl_file is not None:
+        args.extend(["--cl-file", str(cl_file)])
+    return args
 
 
 def _mkoneszmap_args(
@@ -133,8 +139,10 @@ def _mkoneszmap_args(
     noise_seed: int,
     band: BandConfig,
     y_map: Path,
+    *,
+    cl_file: Path | None,
 ) -> List[str]:
-    return [
+    args = [
         str(rseed),
         f"{band.frequency_ghz}",
         f"{band.white_noise_k_arcmin}",
@@ -145,6 +153,9 @@ def _mkoneszmap_args(
         "--param-file",
         str(param_file),
     ]
+    if cl_file is not None:
+        args.extend(["--cl-file", str(cl_file)])
+    return args
 
 
 def _filtermap_args(param_file: Path, map150: Path, map95: Path) -> List[str]:
@@ -175,6 +186,11 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=Path("sznull.fits"),
         help="Input Compton-y map used by the SZ map generators",
+    )
+    parser.add_argument(
+        "--cl-file",
+        type=Path,
+        help="CMB power spectrum forwarded to the SZ map and filter generators",
     )
     parser.add_argument(
         "--rseed",
@@ -219,9 +235,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         execute=args.execute,
     )
 
-    for beam_args in _mkbeam_args(args.param_file):
-        band_label = beam_args[1]
-        _run_stage(f"mkbeam ({band_label})", mkbeam_main, beam_args, execute=args.execute)
+    _run_stage("mkbeam", mkbeam_main, _mkbeam_args(args.param_file), execute=args.execute)
 
     mkszmap_args = _mkszmap_args(
         args.param_file,
@@ -229,6 +243,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         args.y_map,
         BANDS[0].map_output,
         BANDS[1].map_output,
+        cl_file=args.cl_file,
     )
     _run_stage("mkszmap", mkszmap_main, mkszmap_args, execute=args.execute)
 
@@ -240,10 +255,14 @@ def main(argv: Iterable[str] | None = None) -> int:
                 args.noise_seed + offset,
                 band,
                 args.y_map,
+                cl_file=args.cl_file,
             )
             _run_stage(f"mkoneszmap ({band.label})", mkoneszmap_main, mkone_args, execute=args.execute)
 
-    _run_stage("genfilterM", genfilter_main, ["--param-file", str(args.param_file)], execute=args.execute)
+    genfilter_args = ["--param-file", str(args.param_file)]
+    if args.cl_file is not None:
+        genfilter_args.extend(["--cl-file", str(args.cl_file)])
+    _run_stage("genfilterM", genfilter_main, genfilter_args, execute=args.execute)
 
     filter_args = _filtermap_args(args.param_file, BANDS[0].map_output, BANDS[1].map_output)
     _run_stage("filtermapM", filtermap_main, filter_args, execute=args.execute)
